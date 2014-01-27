@@ -26,7 +26,7 @@
      
 */
 
-#define  DEBUG  0  // LEVLES 0 = OFF, 1-5 increase in verbosity
+#define  DEBUG  4  // LEVLES 0 = OFF, 1-5 increase in verbosity
 
 void
 DebugPrint(int  level, char *s)
@@ -53,6 +53,116 @@ DebugPrintf(int  level, char *fmt,...)
 
   DebugPrint(level, tmp);
 
+}
+
+#include  <TimerFive.h>
+
+#define  FIFO_SIZE  32
+
+unsigned long  Fifo[FIFO_SIZE];
+int  FifoTail = 0;
+int  FifoHead = 0;
+
+void
+FifoInit()
+{
+  noInterrupts();
+  memset(Fifo,0,FIFO_SIZE);
+  FifoHead = -1;
+  FifoTail = -1;
+  interrupts();
+}
+
+boolean
+FifoPush(unsigned long  i)
+{
+  noInterrupts();
+  if(FifoIsEmpty())
+  {
+    FifoHead = FifoTail = 0;
+    Fifo[0] = i;
+    
+    interrupts();
+    return true;
+  }
+  else
+  {
+    FifoHead++;
+    if( FifoHead == FIFO_SIZE)
+    {
+      FifoHead = 0;
+    }
+    
+    if( FifoHead == FifoTail )
+    {
+      FifoHead--;
+      
+      if(FifoHead == -1)
+        FifoHead = FIFO_SIZE - 1;
+        
+      interrupts();  
+      return false;
+    }
+    
+    Fifo[FifoHead] = i;
+    interrupts();
+    return true;
+  }
+  
+}
+
+boolean
+FifoPop(unsigned long *i)
+{
+  noInterrupts();
+  
+  if(FifoIsEmpty())
+  {
+    interrupts();
+    return false;
+  }
+  
+  *i = Fifo[FifoTail];
+
+  if(FifoTail == FifoHead)
+  {
+    FifoTail = FifoHead = -1;
+  }
+  else
+  {
+    FifoTail++;
+    if( FifoTail == FIFO_SIZE)
+      FifoTail = 0;
+  }
+  interrupts();
+  return true;
+}
+
+boolean
+FifoPeek(unsigned long *i)
+{
+  noInterrupts();
+  if(FifoIsEmpty())
+  {
+    interrupts();
+    return false;
+  }
+  *i = Fifo[FifoTail];
+  interrupts();
+  return true;
+}
+
+boolean
+FifoIsEmpty()
+{
+  if((FifoHead == -1) && (FifoTail == -1))
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
 //
@@ -993,7 +1103,8 @@ SensorsPoll()
              (Sensors[i].debounce == 0) )
         {
           Sensors[i].debounce = millis() + SENSOR_DEBOUNCE_MS;
-          TrainsHandleSensorTrigger(i);
+          //TrainsHandleSensorTrigger(i);
+          FifoPush((unsigned long)i);
         }
         if ( Sensors[i].debounce > 0 )
         {
@@ -1828,6 +1939,17 @@ ControllerLoop()
 //
 
 void
+HandleEvents()
+{
+  unsigned long k;
+  
+  while( ! FifoIsEmpty() )
+  {
+    FifoPop(&k);
+    TrainsHandleSensorTrigger((int)k);
+  }
+}
+void
 ShowTime()
 {
   unsigned long  t;
@@ -1851,6 +1973,7 @@ setup()
 {
   Serial.begin(9600);
   
+  FifoInit();
   DisplayInit(&Serial2);
   PointsInit();
   SectionsInit();
@@ -1858,13 +1981,18 @@ setup()
   SensorsInit();
   ControllerInit();
   TrainsInit();
+  
+  Timer5.initialize(10000);           
+  Timer5.attachInterrupt(SensorsPoll);  
+
 }
 
 
 void
 loop()
 {
-  SensorsPoll();
+  // SensorsPoll(); // NOW INTERRUPT DIRIVEN
+  HandleEvents();
   ServoLoop();
   MotorsLoop();
   ControllerLoop();

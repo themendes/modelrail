@@ -345,7 +345,7 @@ ServoLoop()
     for (i = 0; i < NUM_POINTS; i++)
     {
         // motor is now idle so turn it off
-        if( (i != 5) & (i != 6)) // points 6 & 7 are subject to a bit of noise so this is a temp hack to never turn them off!!
+        if( (i != 5) && (i != 6)) // points 6 & 7 are subject to a bit of noise so this is a temp hack to never turn them off!!
         {  
           set_speed(i, 2);
           set_servo_parameters(i, 0, 15);
@@ -608,7 +608,7 @@ MotorsInit()
 #define  MOTOR_TRAM    1
 #define  MOTOR_TRAINS  0
 
-#define  MOTOR_ZERO_PT  30
+#define  MOTOR_ZERO_PT  10
 
 
 #define  MOTOR_ERR_OK  0
@@ -629,10 +629,10 @@ MotorSetSpeed(int  motor, int  spd, int  control_id)
   if(motor >= NUM_MOTORS)
     return MOTOR_ERR_BAD_MOTOR;
     
-  if( control_id <= MOTOR_CONTROL_NONE )
+  if( control_id < MOTOR_CONTROL_NONE )
     return MOTOR_ERR_BAD_CONTROL;
   
-  if(Motors[motor].control_id > 0)
+  if(Motors[motor].control_id > MOTOR_CONTROL_NONE)
   {
     // if the motor is being controlled then check if it is the right person giving command
     if( control_id != Motors[motor].control_id)
@@ -686,7 +686,8 @@ MotorWhoControls(int  m)
 {
   return Motors[m].control_id;
 }
-// returns true of the control ID provided is currently in control of the motor or if it's not controlled at all (!)
+
+// returns true if the control ID provided is currently in control of the motor or if it's not controlled at all (!)
 boolean
 MotorGotControl(int  m, int  control_id)
 {
@@ -695,6 +696,21 @@ MotorGotControl(int  m, int  control_id)
     
   return (Motors[m].control_id == control_id);
 }
+
+// returns true if you have successfully taken control of the motor.
+boolean
+MotorGetControl(int  m, int  control_id)
+{
+  if ( ( Motors[m].control_id == MOTOR_CONTROL_NONE) ||
+       ( Motors[m].control_id == control_id) )
+  {
+    Motors[m].control_id = control_id;
+    return true;
+  }
+  else
+    return false;
+}
+
 
 void
 MotorReleaseControl(int  m, int  control_id)
@@ -1334,6 +1350,8 @@ TrainsGetNextWayPt(int  t)
   return next_way_pt;
 }
 
+#define  TRAIN_CHECK_BACKOFF_TIME_MS  200
+
 void
 TrainProcess(int t)
 {
@@ -1355,7 +1373,7 @@ TrainProcess(int t)
       cur_sect = SensorsMapDestinationToSection(Trains[t].current_position);
       SectionOccupy(cur_sect, t);
       
-      Trains[t].state = check_proceed_start;
+      Trains[t].state = stopped_blocked;
       
       break;
     case stopping_blocked:
@@ -1393,7 +1411,7 @@ TrainProcess(int t)
       Trains[t].set_speed = 0;
            
       // ensure I control the motor otherwise print a panic and then go to hard stop and correct state.
-      if( MotorGotControl( Trains[t].motor, t ) )
+      if( MotorGetControl( Trains[t].motor, t ) )
       {
         // slow down
         if( abs(MotorGetSpeed(Trains[t].motor)) > Trains[t].brake_delta) // we are within a fart of 0
@@ -1474,10 +1492,7 @@ TrainProcess(int t)
       }
       break;
       
-    case check_proceed_run:
-      DebugPrintf(0,"PANIC: Train %s sees check_proceed_run!!",Trains[t].name);
-      // fall through
-    case check_proceed_start:
+   case check_proceed_start:
       if( Trains[t].backoff_timer > 0L)
       {
         if( millis() > Trains[t].backoff_timer)
@@ -1488,17 +1503,18 @@ TrainProcess(int t)
           return;
       }
       
-      if (! MotorGotControl(Trains[t].motor, t) )
+      if (! MotorGetControl(Trains[t].motor, t) )
       {
         // I cant control the motor, dammit
         Trains[t].state = stopped_blocked;
-        Trains[t].backoff_timer = millis() + 1000;
+        Trains[t].backoff_timer = millis() + TRAIN_CHECK_BACKOFF_TIME_MS;
 
         DebugPrintf(4,"%s can't control the motor because %s has it", Trains[t].name, Trains[ MotorWhoControls(Trains[t].motor) ].name);
         // Now, what happens if this was in CheckProceedRun? It should never be that way a this stage.
         return;
       }
-      
+      // fall through - no break
+    case check_proceed_run:
       if (ControllerRequestTransition(t, Trains[t].current_position, Trains[t].destination) )
       {
         if(Trains[t].state == check_proceed_run)
@@ -1510,7 +1526,7 @@ TrainProcess(int t)
       else
       {
         Trains[t].state = stopped_blocked;
-        Trains[t].backoff_timer = millis() + 1000;
+        Trains[t].backoff_timer = millis() + TRAIN_CHECK_BACKOFF_TIME_MS;
       }
       break;
     case starting:
@@ -1676,7 +1692,7 @@ TrainsHandleSensorTrigger(int dest)
       Trains[i].destination = Trains[i].my_route.waypts[next_way_pt].dest;
       cur_sect = arr_sect;
 
-      // so we know where we are and where we wnt to go next
+      // so we know where we are and where we want to go next
 
       blocked = SectionBlocked(cur_sect);
       t = Trains[i].my_route.waypts[Trains[i].way_pt_index].stop_time_s;
@@ -1691,15 +1707,16 @@ TrainsHandleSensorTrigger(int dest)
       {
         TrainsHandleScheduledStop(i, t*1000); 
       }
-      else // if (blocked) // doen's matter - we block on every transition now...
+      else if (blocked) // Commented out the 'if' for cautios running
       {
         TrainsHandleBlocked(i);
       }
       // Now here's what we tried for continuous running...
-      // else
-      // {
-      //   TrainsHandleHadTransition(i);
-      // }
+      else
+      {
+        TrainsHandleHadTransition(i);
+      }
+      
       // ONLY ONE TRAIN CAN TAKE AN EVENT AND THIS IS IT SO RETURN
       
       return;
@@ -1738,17 +1755,17 @@ Transition  TransitionTable[] = {
   /* 0 */  { VILLAGE, STATION,  true, {-1, -1, -1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 1 */  { STATION, VILLAGE,  true, {-1, -1, -1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 2 */  { X8,      X3A,     false, { 0, -1, -1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
-  /* 3 */  { X7,       X2,     false, {-1,  0,  1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,1}, false, 3 , 0},
+  /* 3 */  { X7,       X2,     false, {-1,  0,  1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,1}, false, 1 , 0},
   /* 4 */  { X7,      X3A,     false, { 1,  1,  1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 5 */  { X6,       X8,     false, {-1, -1, -1, -1, -1, -1, -1,  0 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 6 */  { X6,       X7,     false, {-1, -1, -1, -1, -1, -1, -1,  1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 7 */  { X2,       X6,     false, {-1, -1, -1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
   /* 8 */  { X1,      X1A,     false, {-1, -1, -1, -1, -1, -1, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 0 , 0},
-  /* 9 */  { X1A,      X1,     false, {-1, -1, -1, -1,  0,  0, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 2 , 0},
-  /* 10 */ { X1A,      X2,     false, {-1,  0,  0,  1,  1,  0, -1, -1 }, {0,0,0,1,0,0,0,1,0,0,0,0}, false, 3 , 0},
+  /* 9 */  { X1A,      X1,     false, {-1, -1, -1, -1,  0,  0, -1, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 1 , 0},
+  /* 10 */ { X1A,      X2,     false, {-1,  0,  0,  1,  1,  0, -1, -1 }, {0,0,0,1,0,0,0,1,0,0,0,0}, false, 1 , 0},
   /* 11 */ { X1A,     X3A,     false, { 1,  1,  0,  1,  1,  0, -1, -1 }, {0,0,0,0,0,0,0,1,1,0,0,1}, false, 0 , 0},
-  /* 12 */ { X3A,      X1,     false, {-1, -1, -1, -1,  0,  1,  1, -1 }, {0,0,0,0,0,0,0,0,0,0,1,0}, false, 2 , 0},
-  /* 13 */ { X3A,      X2,     false, {-1,  0,  0,  0, -1, -1,  0, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 3 , 0},
+  /* 12 */ { X3A,      X1,     false, {-1, -1, -1, -1,  0,  1,  1, -1 }, {0,0,0,0,0,0,0,0,0,0,1,0}, false, 1 , 0},
+  /* 13 */ { X3A,      X2,     false, {-1,  0,  0,  0, -1, -1,  0, -1 }, {0,0,0,0,0,0,0,0,0,0,0,0}, false, 1 , 0},
   /* 14 */ { X3A,     X3A,     false, { 1,  1,  0,  0, -1, -1,  0, -1 }, {0,0,0,0,0,0,0,1,1,0,0,0}, false, 0 , 0},
 };
 
@@ -1856,7 +1873,7 @@ ControllerRequestTransition(int  train, int  src, int dest)
 
   if(trans > NUM_TRANSITIONS)
   {
-    DebugPrintf(0,"PANIC");
+    DebugPrintf(0,"PANIC: Wierd Transition ID %d", trans);
     while(true)
       ;
   }
@@ -1922,7 +1939,7 @@ ControllerTransitionCompleted(int  train, int  src, int dest)
   else
   {
     TransitionTable[trans].timer = millis() + TransitionTable[trans].clear_time * 1000;
-    DebugPrintf(4,"Transition %d timer started (%d) by %s.",trans, TransitionTable[trans].clear_time, TrainsGetName(train));
+    DebugPrintf(4,"Transition %d timer started (%d) by %s for %lu.",trans, TransitionTable[trans].clear_time, TrainsGetName(train), TransitionTable[trans].timer );
   }
     
 }
@@ -1943,7 +1960,6 @@ ControllerLoop()
     {
       if( millis() > TransitionTable[i].timer) // The time is now past the timer value
       {
-        TransitionTable[i].timer = 0;            // reset the timer
         for(j = 0 ; j < NUM_SECTIONS; j++)       // for each one listed, clear the section
         {
           if( TransitionTable[i].block[j] > 0)
@@ -1951,7 +1967,8 @@ ControllerLoop()
         }
         
         TransitionTable[i].in_transit = false;   // we can finally clear the transit
-        DebugPrintf(4,"Transition %d timer goes off.",i);       
+        DebugPrintf(4,"Transition %d timer goes off %lu %lu.",i, TransitionTable[i].timer, millis());       
+        TransitionTable[i].timer = 0;            // reset the timer
       }
     }
   }
@@ -2046,6 +2063,6 @@ loop()
   SensorsDisplayAnalogs();
 
   ShowTime();
-  delay(10);
+  // delay(10);
 }
 

@@ -26,7 +26,7 @@
      
 */
 
-#define  DEBUG  4  // LEVLES 0 = OFF, 1-5 increase in verbosity
+#define  DEBUG  0  // LEVLES 0 = OFF, 1-5 increase in verbosity
 
 void
 DebugPrint(int  level, char *s)
@@ -1219,6 +1219,19 @@ Route  ShortRoute = {
   }
 };
 
+Route  OuterRoute = {
+  8, 
+  { 
+    {(int)X1A,  0, false, DREV},
+    {(int)X1 ,  5, false, DREV},
+    {(int)X1A,  0, false, DREV},
+    {(int)X2 ,  0, false, DREV},
+    {(int)X6 ,  0, false, DREV},
+    {(int)X7 , 40, false, DREV},
+    {(int)X3A,  5, false, DREV},
+    {(int)X1 ,  0, false, DREV},
+  }
+};
 
 typedef enum {  bootup = 1,          //1
                 stopping_scheduled,  //2
@@ -1256,7 +1269,7 @@ typedef struct {
 
 } Train;
 
-#define  NUM_TRAINS  3 // just test the tram for now else set to 2
+#define  NUM_TRAINS  4 // just test the tram for now else set to 2
 
 Train  Trains[] = {
   {
@@ -1266,12 +1279,12 @@ Train  Trains[] = {
   },
   {
     "462", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 190,  70, 0L, bootup, 2, ShortDemoRoute,
-    { 0, 0, 0, 0, 0, 80, 60, 5, 5 },
+    { 0, 0, 0, 0, 0, 80, 60, 5, 6 },
     0L, 5.0, 2.0, 0, 0, 0L, false, 0L
   },
   {
     "RED", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 110,  60, 0L, bootup, 3, ShortRoute,
-    { 0, 0, 0, 0, 0, 80, 60, 5, 5 },
+    { 0, 0, 0, 0, 0, 80, 60, 5, 1 },
     0L, 1.0, 4.0, 0, 0, 0L, false, 0L
   },
   /*
@@ -1280,12 +1293,13 @@ Train  Trains[] = {
     { 0, 0, 0, 0, 0, 80, 60, 5, 5 },
     0L, 3.0, 2.0, 0, 0, 0L, false, 0L
   },
+  */
   {
-    "DBG", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 100,  60, 0L, bootup, 3, ShortRoute,
-    { 0, 0, 0, 0, 0, 80, 60, 5, 5 },
+    "DBG", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 70,  40, 0L, bootup, 3, OuterRoute,
+    { 0, 0, 0, 0, 0, 80, 60, 0, 0 },
     0L, 1.0, 2.0, 0, 0, 0L, false, 0L
   }
-  */
+  
 };  
 
 void
@@ -1350,7 +1364,7 @@ TrainsGetNextWayPt(int  t)
   return next_way_pt;
 }
 
-#define  TRAIN_CHECK_BACKOFF_TIME_MS  200
+#define  TRAIN_CHECK_BACKOFF_TIME_MS  (150 + random(100))
 
 void
 TrainProcess(int t)
@@ -1455,8 +1469,10 @@ TrainProcess(int t)
       SectionIsolate( SensorsMapDestinationToSection(Trains[t].current_position) );
       // Release the motor
       MotorReleaseControl(Trains[t].motor, t );
+
       // Set the state to check_proceed
       Trains[t].state = check_proceed_start;
+      
       break;
     case stopped_scheduled:
       // check the timer. If its zero and we need to set a time then
@@ -1502,6 +1518,13 @@ TrainProcess(int t)
         else
           return;
       }
+
+      if( SectionOccupied( SensorsMapDestinationToSection( Trains[t].destination) ) && 
+          ( S_TRAM != SensorsMapDestinationToSection( Trains[t].destination) )) // tram line is always occupied!
+      {
+        Trains[t].state = stopped_blocked;
+        return;
+      }
       
       if (! MotorGetControl(Trains[t].motor, t) )
       {
@@ -1520,13 +1543,13 @@ TrainProcess(int t)
         if(Trains[t].state == check_proceed_run)
           Trains[t].state = running;
           
-        if(Trains[t].state == check_proceed_start)
+        if(Trains[t].state == check_proceed_start) // valid as fall through into this case...
           Trains[t].state = starting;
       }
       else
       {
-        Trains[t].state = stopped_blocked;
-        Trains[t].backoff_timer = millis() + TRAIN_CHECK_BACKOFF_TIME_MS;
+        Trains[t].state = stopping_blocked;
+        //Trains[t].backoff_timer = millis() + TRAIN_CHECK_BACKOFF_TIME_MS;
       }
       break;
     case starting:
@@ -2018,6 +2041,7 @@ setup()
   int  i;
   
   Serial.begin(9600);
+  randomSeed(analogRead(15));
   
   FifoInit();
   DisplayInit(&Serial2);

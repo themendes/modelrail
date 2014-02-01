@@ -320,7 +320,7 @@ ServoLoop()
 
         //move it!
         position_8bit(i,(byte)map(pos,0,179,0,255));
-        delay(50); // I HATE THIS XXXX
+        delay(200);
         points_rest_timer = millis() + POINT_REST_TIME_MS;
         
         DebugPrintf(5,"%lu = points_rest_timer", points_rest_timer);
@@ -937,7 +937,7 @@ SectionOccupied(int s)
 void
 SectionOccupy(int s, int train)
 {
-  if( Sections[s].occupied  != SECTION_NOT_OCCUPIED)
+  if( (Sections[s].occupied  != SECTION_NOT_OCCUPIED) && (s != S_TRAM) )
   {
     DebugPrintf( 0, "Section being occupied but is already (s,o,t) %d, %d, %s", s, Sections[s].occupied, TrainsGetName(train));
     // PANIC
@@ -1164,8 +1164,8 @@ typedef struct {
 Route  TramRoute = {
   2, 
   { 
-    {(int)VILLAGE, 15, true, DFWD},
-    {(int)STATION, 15, true, DREV}
+    {(int)VILLAGE, 30, true, DFWD},
+    {(int)STATION, 30, true, DREV}
   }
 };
 
@@ -1174,7 +1174,7 @@ Route  DemoRoute = {
   { 
     {(int)X7 , 20, false, DREV},
     {(int)X3A,  0, true,  DREV},
-    {(int)X3A,  0, false, DREV},
+    {(int)X3A,  5, false, DREV},
     {(int)X2 ,  0, false, DREV},
     {(int)X6 ,  0, false, DREV},
     {(int)X8 , 20, false, DREV},
@@ -1191,18 +1191,18 @@ Route  DemoRoute = {
 Route  ShortDemoRoute = {
   12, 
   { 
-    {(int)X7 , 20, false, DREV},
+    {(int)X7 , 40, false, DREV},
     {(int)X3A,  0, true,  DREV},
-    {(int)X2 ,  0, false, DREV},
-    {(int)X6 ,  0, false, DREV},
-    {(int)X8 , 20, false, DREV},
+    {(int)X2 , 20, false, DREV},
+    {(int)X6 ,  2, false, DREV},
+    {(int)X8 , 40, false, DREV},
     {(int)X3A, 10, false, DREV},
-    {(int)X1 ,  0, false, DREV},
+    {(int)X1 , 20, false, DREV},
     {(int)X1A,  0, true,  DREV},
-    {(int)X1 ,  0, true,  DREV},
+    {(int)X1 , 20, true,  DREV},
     {(int)X1A, 10, true,  DREV},
     {(int)X2 ,  0, false, DREV},
-    {(int)X6 ,  0, false, DREV}  
+    {(int)X6 ,  2, false, DREV}  
   }
 };
 
@@ -1210,12 +1210,12 @@ Route  ShortRoute = {
   7, 
   { 
     {(int)X8 , 30, false, DREV},
-    {(int)X3A, 10, false,  DREV},
-    {(int)X1,   0, false, DREV},
+    {(int)X3A,  5, false,  DREV},
+    {(int)X1,  10, false, DREV},
     {(int)X1A, 10, false, DREV},
     {(int)X3A,  0, false, DREV},
-    {(int)X2 ,  0, false, DREV},
-    {(int)X6 ,  5, false, DREV},
+    {(int)X2 , 10, false, DREV},
+    {(int)X6 ,  2, false, DREV},
   }
 };
 
@@ -1223,13 +1223,13 @@ Route  OuterRoute = {
   8, 
   { 
     {(int)X1A,  0, false, DREV},
-    {(int)X1 ,  5, false, DREV},
+    {(int)X1 , 20, false, DREV},
     {(int)X1A,  0, false, DREV},
-    {(int)X2 ,  0, false, DREV},
-    {(int)X6 ,  0, false, DREV},
+    {(int)X2 , 20, false, DREV},
+    {(int)X6 ,  2, false, DREV},
     {(int)X7 , 40, false, DREV},
     {(int)X3A,  5, false, DREV},
-    {(int)X1 ,  0, false, DREV},
+    {(int)X1 , 20, false, DREV},
   }
 };
 
@@ -1263,27 +1263,27 @@ typedef struct {
   float          accel_delta;
   int            speed_step;
   int            way_pt_index;  // always points to the destination we are aiming for in the route
-  int            stop_for_time;
+  int            stop_for_time; // time for next stop in milli-seconds.
   boolean        braking;
   unsigned long  backoff_timer;
 
 } Train;
 
-#define  NUM_TRAINS  4 // just test the tram for now else set to 2
+#define  NUM_TRAINS  4
 
 Train  Trains[] = {
   {
-    "TRM", 0, MOTOR_TRAM  , 0, DESTINATION_UNDEFINED, 110,  70, 0L, bootup, 1, TramRoute,
-    { 3, 1, 0, 0, 0, 0, 0, 0, 0 },
+    "TRM", 0, MOTOR_TRAM  , 0, DESTINATION_UNDEFINED, 100,  70, 0L, bootup, 0, TramRoute,
+    { 3, 5, 0, 0, 0, 0, 0, 0, 0 },
     0L, 2.0, 5.0, 0, 0, 0L, false, 0L
   },
   {
-    "462", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 190,  70, 0L, bootup, 2, ShortDemoRoute,
+    "462", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 165,  70, 0L, bootup, 1, ShortDemoRoute,
     { 0, 0, 0, 0, 0, 80, 60, 5, 6 },
     0L, 5.0, 2.0, 0, 0, 0L, false, 0L
   },
   {
-    "RED", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 110,  60, 0L, bootup, 3, ShortRoute,
+    "RED", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED,  90,  60, 0L, bootup, 2, ShortRoute,
     { 0, 0, 0, 0, 0, 80, 60, 5, 1 },
     0L, 1.0, 4.0, 0, 0, 0L, false, 0L
   },
@@ -1294,10 +1294,11 @@ Train  Trains[] = {
     0L, 3.0, 2.0, 0, 0, 0L, false, 0L
   },
   */
+  
   {
-    "DBG", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 70,  40, 0L, bootup, 3, OuterRoute,
+    "DBG", 0, MOTOR_TRAINS, 0, DESTINATION_UNDEFINED, 60,  40, 0L, bootup, 3, OuterRoute,
     { 0, 0, 0, 0, 0, 80, 60, 0, 0 },
-    0L, 1.0, 2.0, 0, 0, 0L, false, 0L
+    0L, 1.0, 5.0, 0, 0, 0L, false, 0L
   }
   
 };  
@@ -1305,7 +1306,8 @@ Train  Trains[] = {
 void
 TrainsDisplay()
 {
-  int  i, d;
+  int  i;
+  int  d;
   char  c;
   unsigned long  t;
   
@@ -1324,9 +1326,16 @@ TrainsDisplay()
       {
         d = (int)((Trains[i].timer - t))/1000;
         if(d > 9)
-          c = 'X';
-        else
+        {
+          if(d % 2)
+            c = '^';
+          else
+            c = 'v';
+        }
+        else if (d >=0)
           c = (char)((int)'0' + d);
+        else
+          c = '?';
       }
     }
     else
@@ -1334,14 +1343,17 @@ TrainsDisplay()
       c = '#';
     }
 
-    DisplayPrintf(0, Trains[i].display_row, "%s %04d %01d %01d %01d %c",
-                  Trains[i].name,
-                  Trains[i].set_speed,
-                  Trains[i].current_position,
-                  Trains[i].destination,
-                  Trains[i].state,
-                  c
-                  );          
+    if(Trains[i].display_row > 0)
+    {
+      DisplayPrintf(0, Trains[i].display_row, "%s %04d %01d %01d %01d %c",
+                    Trains[i].name,
+                    Trains[i].set_speed,
+                    Trains[i].current_position,
+                    Trains[i].destination,
+                    Trains[i].state,
+                    c
+                  );
+    }             
   }
 }
 
@@ -1502,7 +1514,7 @@ TrainProcess(int t)
       else
       {
         //set the timer off
-        Trains[t].timer = millis() + Trains[t].stop_for_time;
+        Trains[t].timer = millis() + (long)(Trains[t].stop_for_time) ; //* 1000L;
         
         DebugPrintf(2, "Starting timer for train %d (%d)",t, Trains[t].stop_for_time);
       }
@@ -1645,10 +1657,10 @@ TrainsHandleBlocked(int  train)
 }
 
 void
-TrainsHandleScheduledStop(int  train, int  period_s)
+TrainsHandleScheduledStop(int  train, int  period_ms)
 {
   Trains[train].state = stopping_scheduled;
-  Trains[train].stop_for_time = period_s;
+  Trains[train].stop_for_time = period_ms;
 }
 
 void
@@ -1669,11 +1681,13 @@ TrainsLoop()
 {
   int  i;
   
-  for(i=0; i < NUM_TRAINS; i++)
-  {
+  i = random(0, NUM_TRAINS);
+
+  //for(i=0; i < NUM_TRAINS; i++)
+  //{
     TrainProcess(i);
-  }
-  
+  //}
+   
   if( (int)( millis() / 100) % 2 == 0)
     TrainsDisplay();
 }
@@ -2030,6 +2044,23 @@ ShowTime()
     
 }
 
+void
+ConsoleInit()
+{
+  Serial3.begin(9600);
+}
+void
+ConsoleLoop()
+{
+  char  c;
+  
+  while(Serial3.available() )
+  {
+    c = Serial3.read();
+    Serial.print(c);
+  }
+}
+
 //
 // ^^^^^^^^^^^^^^^^^^ APPLICATION ^^^^^^^^^^^^^^^^^^
 //
@@ -2043,6 +2074,7 @@ setup()
   Serial.begin(9600);
   randomSeed(analogRead(15));
   
+  ConsoleInit();
   FifoInit();
   DisplayInit(&Serial2);
   PointsInit();
@@ -2078,7 +2110,7 @@ setup()
 void
 loop()
 {
-  // SensorsPoll(); // NOW INTERRUPT DIRIVEN
+  ConsoleLoop();
   HandleEvents();
   ServoLoop();
   MotorsLoop();
